@@ -12,8 +12,8 @@ export const Header = ({ onToggleSidebar, pendingCount = 0 }) => {
   const handleLogout = () => {
     logout();
     navigate('/login');
-  };
-
+  }; 
+ 
   return (
     <header className="app-header">
       <div className="header-left">

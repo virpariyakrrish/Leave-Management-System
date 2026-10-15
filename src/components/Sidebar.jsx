@@ -25,6 +25,7 @@ export const Sidebar = ({ isOpen, onClose }) => {
 
   const employeeLinks = [
     { name: 'Dashboard', path: '/employee/dashboard', icon: FiGrid },
+    { name: 'Departments', path: '/employee/departments', icon: FiLayers },
     { name: 'Apply Leave', path: '/employee/apply-leave', icon: FiPlusCircle },
     { name: 'My Leave History', path: '/employee/leave-history', icon: FiClock },
     { name: 'Leave Balance', path: '/employee/leave-balance', icon: FiPieChart },

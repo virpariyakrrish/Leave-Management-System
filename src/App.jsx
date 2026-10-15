@@ -50,6 +50,7 @@ export const App = () => {
               <Route path="leave-history" element={<LeaveHistory />} />
               <Route path="leave-balance" element={<LeaveBalance />} />
               <Route path="leave/:id" element={<LeaveDetails />} />
+              <Route path="departments" element={<Departments />} />
               <Route path="profile" element={<Profile />} />
             </Route>
 

@@ -1,233 +1,249 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { useLeaves } from '../hooks/useLeaves';
-import { useToast } from '../context/ToastContext';
-import { apiService } from '../services/api';
+import { useAuth } from '../context/AuthContext';
 import {
   FiLayers,
   FiPlus,
   FiUsers,
+  FiSearch,
   FiCheckCircle,
-  FiX,
-  FiBriefcase,
-  FiArrowRight
+  FiClock,
+  FiBriefcase
 } from 'react-icons/fi';
+import DepartmentCard from '../components/departments/DepartmentCard';
+import DepartmentDetailView from '../components/departments/DepartmentDetailView';
+import AddDepartmentModal from '../components/departments/AddDepartmentModal';
+import { getEmployeePresenceStatus } from '../utils/departmentUtils';
 
 export const Departments = () => {
-  const { departments, users, refreshData } = useLeaves();
-  const { showToast } = useToast();
+  const { departments, users, leaveRequests, leaveTypes, loading, refreshData } = useLeaves();
+  const { isManager } = useAuth();
+  const [searchParams, setSearchParams] = useSearchParams();
 
+  const [searchTerm, setSearchTerm] = useState('');
   const [modalOpen, setModalOpen] = useState(false);
-  const [selectedDept, setSelectedDept] = useState(null);
-  const [formData, setFormData] = useState({ name: '', description: '' });
-  const [formErrors, setFormErrors] = useState({});
-  const [isSubmitting, setIsSubmitting] = useState(false);
 
-  const handleOpenModal = () => {
-    setFormData({ name: '', description: '' });
-    setFormErrors({});
-    setModalOpen(true);
+  // Selected department ID from URL query param ?dept=dept-1
+  const selectedDeptId = searchParams.get('dept');
+
+  const selectedDepartment = useMemo(() => {
+    if (!selectedDeptId) return null;
+    return departments.find((d) => d.id === selectedDeptId) || null;
+  }, [selectedDeptId, departments]);
+
+  const handleSelectDepartment = (deptId) => {
+    setSearchParams({ dept: deptId });
+    window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
-  const handleSubmit = async (e) => {
-    e.preventDefault();
-    if (!formData.name.trim()) {
-      setFormErrors({ name: 'Department name is required.' });
-      return;
-    }
+  const handleBackToOverview = () => {
+    setSearchParams({});
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  };
 
-    setFormErrors({});
-    setIsSubmitting(true);
-    try {
-      const res = await apiService.createDepartment(formData);
-      if (res.success) {
-        showToast(`Department "${res.data.name}" added successfully!`, 'success');
-        await refreshData();
-        setModalOpen(false);
+  // Filtered departments for directory overview
+  const filteredDepartments = useMemo(() => {
+    if (!searchTerm.trim()) return departments;
+    const term = searchTerm.toLowerCase();
+    return departments.filter(
+      (d) =>
+        d.name.toLowerCase().includes(term) ||
+        (d.description && d.description.toLowerCase().includes(term))
+    );
+  }, [departments, searchTerm]);
+
+  // Overall company stats across all departments
+  const overallStats = useMemo(() => {
+    let awayCount = 0;
+    let activeCount = 0;
+
+    users.forEach((user) => {
+      const presence = getEmployeePresenceStatus(user.id, leaveRequests);
+      if (presence.isAway) {
+        awayCount++;
+      } else {
+        activeCount++;
       }
-    } catch (err) {
-      showToast(err.message || 'Failed to create department', 'error');
-    } finally {
-      setIsSubmitting(false);
-    }
-  };
+    });
 
+    return {
+      totalDepts: departments.length,
+      totalUsers: users.length,
+      activeToday: activeCount,
+      awayToday: awayCount
+    };
+  }, [departments, users, leaveRequests]);
+
+  if (loading && departments.length === 0) {
+    return (
+      <div className="page-loading-state">
+        <div className="spinner" />
+        <p>Loading departments...</p>
+      </div>
+    );
+  }
+
+  // If a department is selected (e.g. Design, Development, QA, etc.), render the rich DepartmentDetailView!
+  if (selectedDepartment) {
+    return (
+      <div className="dept-page-container">
+        <DepartmentDetailView
+          department={selectedDepartment}
+          allDepartments={departments}
+          users={users}
+          leaveRequests={leaveRequests}
+          leaveTypes={leaveTypes}
+          onBack={handleBackToOverview}
+          onSelectDept={handleSelectDepartment}
+        />
+
+        <AddDepartmentModal
+          isOpen={modalOpen}
+          onClose={() => setModalOpen(false)}
+          onSuccess={async () => {
+            await refreshData();
+          }}
+        />
+      </div>
+    );
+  }
+
+  // Otherwise render the Department Directory Overview
   return (
-    <div className="departments-page">
-      
-      <div className="page-header-row mb-6">
-        <div>
-          <h1 className="page-main-title">Departments</h1>
-          <p className="page-subtitle">Organizational units and department team allocations</p>
+    <div className="dept-page-container">
+      {/* Top Header */}
+      <div className="dept-header-flex">
+        <div className="dept-header-title-group">
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+            <span className="dept-badge-pill">
+              <FiLayers /> Corporate Hierarchy
+            </span>
+          </div>
+          <h1 className="page-main-title">Departments & Teams</h1>
+          <p className="page-subtitle">
+            Organizational units, cross-functional teams, and real-time department availability
+          </p>
         </div>
-        <button type="button" className="btn-primary" onClick={handleOpenModal}>
-          <FiPlus className="mr-1" /> Add Department
-        </button>
+
+        {isManager && (
+          <button
+            type="button"
+            className="btn-primary"
+            onClick={() => setModalOpen(true)}
+            style={{ display: 'inline-flex', alignItems: 'center', gap: '8px' }}
+          >
+            <FiPlus style={{ fontSize: '16px' }} />
+            <span>Add Department</span>
+          </button>
+        )}
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5 mb-8">
-        {departments.map((dept) => {
-          const deptEmployees = users.filter((u) => u.department_id === dept.id);
-          return (
-            <div
-              key={dept.id}
-              className="content-card dept-card hover:border-blue-400 transition-all cursor-pointer"
-              onClick={() => setSelectedDept(dept)}
+      {/* Top 4-KPI Overview Bar */}
+      <div className="dept-kpi-grid">
+        <div className="dept-kpi-card card-accent-blue">
+          <div className="dept-kpi-icon-box" style={{ background: '#eff6ff', color: '#2563eb' }}>
+            <FiLayers />
+          </div>
+          <div className="dept-kpi-info">
+            <span className="dept-kpi-num">{overallStats.totalDepts}</span>
+            <span className="dept-kpi-label">Active Departments</span>
+          </div>
+        </div>
+
+        <div className="dept-kpi-card card-accent-purple">
+          <div className="dept-kpi-icon-box" style={{ background: '#faf5ff', color: '#8b5cf6' }}>
+            <FiUsers />
+          </div>
+          <div className="dept-kpi-info">
+            <span className="dept-kpi-num">{overallStats.totalUsers}</span>
+            <span className="dept-kpi-label">Total Team Members</span>
+          </div>
+        </div>
+
+        <div className="dept-kpi-card card-accent-green">
+          <div className="dept-kpi-icon-box" style={{ background: '#ecfdf5', color: '#10b981' }}>
+            <FiCheckCircle />
+          </div>
+          <div className="dept-kpi-info">
+            <span className="dept-kpi-num" style={{ color: '#10b981' }}>{overallStats.activeToday}</span>
+            <span className="dept-kpi-label">Present & Working</span>
+          </div>
+        </div>
+
+        <div className="dept-kpi-card card-accent-amber">
+          <div className="dept-kpi-icon-box" style={{ background: '#fffbeb', color: '#f59e0b' }}>
+            <FiClock />
+          </div>
+          <div className="dept-kpi-info">
+            <span className="dept-kpi-num" style={{ color: '#f59e0b' }}>{overallStats.awayToday}</span>
+            <span className="dept-kpi-label">Currently On Leave</span>
+          </div>
+        </div>
+      </div>
+
+      {/* Search & Filter Toolbar */}
+      <div className="dept-toolbar">
+        <div className="dept-search-box">
+          <FiSearch className="dept-search-icon" />
+          <input
+            type="text"
+            placeholder="Search departments by name or domain..."
+            value={searchTerm}
+            onChange={(e) => setSearchTerm(e.target.value)}
+            className="dept-search-input"
+          />
+        </div>
+
+        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '13px', color: '#64748b' }}>
+          <span>Showing <strong>{filteredDepartments.length}</strong> of {departments.length} departments</span>
+        </div>
+      </div>
+
+      {/* Departments Cards Grid */}
+      {filteredDepartments.length === 0 ? (
+        <div className="content-card" style={{ textAlign: 'center', padding: '60px 20px', color: '#64748b' }}>
+          <FiBriefcase style={{ fontSize: '42px', color: '#cbd5e1', marginBottom: '14px' }} />
+          <h3 style={{ fontSize: '18px', fontWeight: 700, color: '#1e293b', marginBottom: '6px' }}>
+            No departments found
+          </h3>
+          <p style={{ fontSize: '14px', color: '#64748b', maxWidth: '380px', margin: '0 auto 20px' }}>
+            {searchTerm
+              ? `No department matches "${searchTerm}". Try a different search term.`
+              : 'There are no departments configured in the organization.'}
+          </p>
+          {isManager && (
+            <button
+              type="button"
+              className="btn-primary"
+              onClick={() => setModalOpen(true)}
             >
-              <div className="flex items-start justify-between mb-3">
-                <div className="dept-icon-box">
-                  <FiBriefcase className="text-blue-600 text-xl" />
-                </div>
-                <span className="badge-active">Active</span>
-              </div>
-
-              <h2 className="text-lg font-bold text-slate-800 mb-1">{dept.name}</h2>
-              <p className="text-xs text-slate-500 mb-4 line-clamp-2">
-                {dept.description || 'Core organizational department.'}
-              </p>
-
-              <div className="flex items-center justify-between pt-3 border-t border-slate-100 text-sm">
-                <span className="flex items-center gap-1.5 text-slate-600 font-medium">
-                  <FiUsers className="text-slate-400" />
-                  {deptEmployees.length} Employee{deptEmployees.length !== 1 ? 's' : ''}
-                </span>
-                <span className="text-blue-600 text-xs font-semibold flex items-center gap-1">
-                  View Team <FiArrowRight />
-                </span>
-              </div>
-            </div>
-          );
-        })}
-      </div>
-
-      {selectedDept && (
-        <div className="modal-backdrop">
-          <div className="modal-card max-w-lg">
-            <div className="modal-header">
-              <div className="flex items-center gap-2 text-slate-800 font-bold text-lg">
-                <FiBriefcase className="text-blue-600" /> {selectedDept.name} Department
-              </div>
-              <button
-                type="button"
-                className="modal-close-btn"
-                onClick={() => setSelectedDept(null)}
-              >
-                <FiX />
-              </button>
-            </div>
-
-            <div className="modal-body py-4">
-              <p className="text-sm text-slate-600 mb-4">{selectedDept.description}</p>
-              <h3 className="font-semibold text-slate-800 text-sm mb-3">
-                Assigned Team Members (
-                {users.filter((u) => u.department_id === selectedDept.id).length}):
-              </h3>
-
-              <div className="space-y-2 max-h-64 overflow-y-auto pr-1">
-                {users
-                  .filter((u) => u.department_id === selectedDept.id)
-                  .map((emp) => (
-                    <div
-                      key={emp.id}
-                      className="flex items-center justify-between p-2.5 rounded-lg bg-slate-50 border border-slate-100"
-                    >
-                      <div className="flex items-center gap-2.5">
-                        <img
-                          src={
-                            emp.avatar ||
-                            'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=100'
-                          }
-                          alt={emp.name}
-                          className="w-8 h-8 rounded-full object-cover"
-                        />
-                        <div>
-                          <p className="text-sm font-semibold text-slate-800">{emp.name}</p>
-                          <p className="text-xs text-slate-500">{emp.designation}</p>
-                        </div>
-                      </div>
-                      <span className="text-xs text-slate-400">{emp.email}</span>
-                    </div>
-                  ))}
-
-                {users.filter((u) => u.department_id === selectedDept.id).length === 0 && (
-                  <p className="text-xs text-slate-400 italic">No employees assigned yet.</p>
-                )}
-              </div>
-            </div>
-
-            <div className="modal-footer flex justify-end pt-3 border-t border-slate-100">
-              <button
-                type="button"
-                className="btn-secondary"
-                onClick={() => setSelectedDept(null)}
-              >
-                Close
-              </button>
-            </div>
-          </div>
+              <FiPlus style={{ marginRight: '6px' }} /> Create Department
+            </button>
+          )}
+        </div>
+      ) : (
+        <div className="dept-cards-grid">
+          {filteredDepartments.map((dept) => (
+            <DepartmentCard
+              key={dept.id}
+              dept={dept}
+              users={users}
+              leaveRequests={leaveRequests}
+              onSelect={handleSelectDepartment}
+            />
+          ))}
         </div>
       )}
 
-      {modalOpen && (
-        <div className="modal-backdrop">
-          <div className="modal-card">
-            <div className="modal-header">
-              <div className="flex items-center gap-2 text-slate-800 font-semibold text-lg">
-                <FiPlus className="text-blue-600" /> Add New Department
-              </div>
-              <button
-                type="button"
-                className="modal-close-btn"
-                onClick={() => setModalOpen(false)}
-              >
-                <FiX />
-              </button>
-            </div>
-
-            <form onSubmit={handleSubmit} noValidate>
-              <div className="modal-body py-4 space-y-4">
-                <div className="form-group">
-                  <label className="form-label">
-                    Department Name <span className="text-rose-500">*</span>
-                  </label>
-                  <input
-                    type="text"
-                    className={`form-input ${formErrors.name ? 'input-error' : ''}`}
-                    placeholder="e.g. Product Marketing"
-                    value={formData.name}
-                    onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-                  />
-                  {formErrors.name && <span className="field-error">{formErrors.name}</span>}
-                </div>
-
-                <div className="form-group">
-                  <label className="form-label">Description</label>
-                  <textarea
-                    rows={3}
-                    className="form-textarea"
-                    placeholder="Brief description of department scope and operations..."
-                    value={formData.description}
-                    onChange={(e) => setFormData({ ...formData, description: e.target.value })}
-                  />
-                </div>
-              </div>
-
-              <div className="modal-footer flex justify-end gap-3 pt-4 border-t border-slate-100">
-                <button
-                  type="button"
-                  className="btn-secondary"
-                  onClick={() => setModalOpen(false)}
-                  disabled={isSubmitting}
-                >
-                  Cancel
-                </button>
-                <button type="submit" className="btn-primary" disabled={isSubmitting}>
-                  {isSubmitting ? 'Creating...' : 'Create Department'}
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
+      {/* Add Department Modal */}
+      <AddDepartmentModal
+        isOpen={modalOpen}
+        onClose={() => setModalOpen(false)}
+        onSuccess={async () => {
+          await refreshData();
+        }}
+      />
     </div>
   );
 };
